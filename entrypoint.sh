@@ -1,6 +1,6 @@
 #!/bin/bash
 
-FILE=league.db
+FILE=canoe.db
 
 if ! [ -f "$FILE" ]; then
     alembic revision --autogenerate -m "Create Database"

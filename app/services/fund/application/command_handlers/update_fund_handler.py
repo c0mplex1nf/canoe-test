@@ -1,0 +1,54 @@
+import requests
+import uuid
+import os
+import json
+from datetime import datetime
+from app.shared.domain.models.fund import Fund
+from app.shared.domain.models.log import Log
+from app.services.fund.domain.events.duplicate_fund_tried import FundDuplicated
+from app.shared.domain.queue_interface import QueueClientInterface
+from app.services.fund.domain.commands.command_interface import CommandInterface
+from app.services.fund.domain.events.fund_event_bus_interface import FundEventBusInterface
+from app.services.fund.domain.repository.fund import FundRepositoryInterface
+
+
+class UpdateFundHandler():
+
+    def __init__(self, fund_id: str, fund: object, command: CommandInterface, repository: FundRepositoryInterface, event_bus: FundEventBusInterface, duplicated_queue: QueueClientInterface) -> None:
+        self.bus = event_bus
+        self.repository = repository
+        self.command = command
+        self.fund = fund
+        self.fund_id = fund_id
+        self.duplicated_queue = duplicated_queue
+
+    def handler(self):
+        manager = self.repository.find_manager(self.fund.manager)
+
+        if not manager:
+            return 'There was not manager with this id'
+
+        companies = self.repository.find_companies(self.fund.companies)
+
+        fund = self.repository.find(self.fund_id)
+
+        new_fund = Fund(
+            id=self.fund_id, name=self.fund.name, start_year=self.fund.start_year, alias=self.fund.alias, nationality=self.fund.nationality, manager=manager, companies=companies
+        )
+
+        if not fund:
+            return 'The Fund does not exist'
+
+        duplicate_fund = self.repository.find_duplicate(fund=new_fund)
+
+        if len(duplicate_fund) > 1:
+            data = Fund.serialize(fund)
+            event = FundDuplicated(
+                func_name=self.duplicated_queue.send_message, data=data)
+            self.bus.add_listener(event)
+            self.bus.emit(event)
+            self.bus.remove_listener(event)
+            return 'There was a duplicate Fund'
+
+        self.command.handler(
+            fund_id=new_fund.id, fund=new_fund, manager=manager, companies=companies, repository=self.repository)

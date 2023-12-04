@@ -4,11 +4,10 @@ from fastapi import FastAPI
 from aio_pika import logger
 from dotenv import load_dotenv
 from config import database
-from app.services.league.presentation.controllers.league import LeagueController
-from app.services.team.presentation.controllers.team import TeamController
-from app.shared.infraestructure.team_queue_client import TeamQueueClient
-from app.shared.infraestructure.player_queue_client import PlayerQueueClient
-
+from app.services.company.presentation.controllers.company import CompanyController
+from app.services.manager.presentation.controllers.manager import ManagerController
+from app.services.fund.presentation.controllers.fund import FundController
+from app.shared.infraestructure.fund_duplicated_queue_client import FundDuplicateQueueClient
 
 
 class Bootstrap(FastAPI):
@@ -16,20 +15,22 @@ class Bootstrap(FastAPI):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         load_dotenv()
+        self.company = CompanyController()
+        self.manager = ManagerController()
+        self.fund = FundController()
         self.metadata = database.start_mappers()
-        self.league = LeagueController()
-        self.team = TeamController()
-        self.team_queue_client = TeamQueueClient()
-        self.player_queue_client = PlayerQueueClient()
- 
+        self.fund_duplicated_queue_client = FundDuplicateQueueClient()
+
+
 app = Bootstrap()
-app.include_router(app.league.router, prefix="/league")
-app.include_router(app.team.router, prefix="/team")
+app.include_router(app.company.router, prefix="/company")
+app.include_router(app.manager.router, prefix="/manager")
+app.include_router(app.fund.router, prefix="/fund")
+
 
 @app.on_event('startup')
 async def startup():
     loop = asyncio.get_running_loop()
-    task_team = loop.create_task(app.team_queue_client.consume(loop=loop))
-    task_player = loop.create_task(app.player_queue_client.consume(loop=loop))
-    await task_team
-    await task_player
+    task_duplicate_fund = loop.create_task(
+        app.fund_duplicated_queue_client.consume(loop=loop))
+    await task_duplicate_fund
